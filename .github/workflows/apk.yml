@@ -1,155 +1,116 @@
-# https://github.com/marketplace/actions/automated-build-android-app-with-github-action
-# https://github.com/marketplace/actions/publish-release
-
-name: Generate APK
-
-env:
-  main_project_module: app
-  target_owner: Xposed-Modules-Repo
-  target_repo: io.github.jqssun.gpssetter
-  target_path: target_path
+name: Build Enhanced GPS APK
 
 on:
   push:
-    branches:
-      - 'release/**'
-    tags:
-      - 'v*.*.*'
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'v*.*.*'
-        required: true
-        type: string
-  # schedule:
-  #   - cron: '0 0 1 */2 *'
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:  # Позволяет запустить вручную
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Set TAG
-        if: github.event_name == 'push'
-        run: |
-          echo "version=$(echo '${{ github.ref_name }}' | awk -F 'v' '{print $2}')" >> $GITHUB_ENV
-
-      - name: Set TAG
-        if: github.event_name == 'workflow_dispatch'
-        run: |
-          echo "version=$(echo '${{ inputs.version }}' | awk -F 'v' '{print $2}')" >> $GITHUB_ENV
-
-      - name: Set ENV
-        run: | 
-          echo "date_today=$(date +'%Y-%m-%d')" >> $GITHUB_ENV;
-          echo "repository_name=$(echo '${{ github.repository }}' | awk -F '/' '{print $2}')" >> $GITHUB_ENV
-
-      - name: Use JDK
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'zulu'
-          java-version: '17' # 21
-          cache: 'gradle'
-
-      - name: Build
-        run: |
-          echo ${{ secrets.STORE }} | base64 -d > upload.jks
-          echo ${{ secrets.LOCAL }} | base64 -d > local.properties
-          chmod +x ./gradlew;
-          ./gradlew assembleRelease --stacktrace
-          rm upload.jks local.properties
-
-      # - name: Upload
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     name: ${{ env.repository_name }} - ${{ env.date_today }}
-      #     path: ${{ env.main_project_module }}/build/outputs/apk/
-
-      - name: Publish (GitHub)
-        uses: softprops/action-gh-release@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          name: v${{ env.version }}
-          tag_name: v${{ env.version }}
-          files: |
-            ${{ env.main_project_module }}/build/outputs/apk/foss/release/app-foss-arm64-v8a-release.apk
-            ${{ env.main_project_module }}/build/outputs/apk/full/release/app-full-arm64-v8a-release.apk
-
-      - name: Publish (Xposed)
-        uses: softprops/action-gh-release@v2
-        with:
-          token: ${{ secrets.PAT }}
-          repository: Xposed-Modules-Repo/io.github.jqssun.gpssetter
-          name: v${{ env.version }}
-          tag_name: v${{ env.version }}
-          files: |
-            ${{ env.main_project_module }}/build/outputs/apk/foss/release/app-foss-arm64-v8a-release.apk
-            ${{ env.main_project_module }}/build/outputs/apk/full/release/app-full-arm64-v8a-release.apk
-
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ env.target_owner }}/${{ env.target_repo }}
-          path: ${{ env.target_path }}
-          token: ${{ secrets.PAT }}
-          # sparse-checkout: |
-          #     README.md
-          # sparse-checkout-cone-mode: false
+    - name: Checkout repository
+      uses: actions/checkout@v3
       
-      - name: Sync
-        run: |
-          cd ${{ env.target_path }}
-          cp ../README.md ../LICENSE .
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add README.md
-          git add LICENSE
-          git commit --amend --no-edit
-          git push --force
+    - name: Set up JDK 11
+      uses: actions/setup-java@v3
+      with:
+        distribution: 'temurin'
+        java-version: '11'
+        
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
       
-      # - name: Get latest release
-      #   id: get_release
-      #   uses: actions/github-script@v6
-      #   with:
-      #     script: |
-      #       const latestRelease = await github.repos.getLatestRelease({
-      #       owner: ${{ env.owner }},
-      #       repo: ${{ env.repo }}
-      #       });
-      #       return latestRelease.data;
-
-      # - name: Download release assets
-      #   run: |
-      #     mkdir -p release-assets
-      #     for asset in $(jq -r '.assets[].browser_download_url' <<< "${{ steps.get_release.outputs.result }}"); do
-      #       filename=$(basename $asset)
-      #       curl -L -o release-assets/$filename $asset
-      #       if [[ $filename == app-foss*.apk ]]; then
-      #         echo "foss=$filename" >> $GITHUB_ENV
-      #       elif [[ $filename == app-full*.apk ]]; then
-      #         echo "full=$filename" >> $GITHUB_ENV
-      #       fi
-      #     done
-
-      # - name: Create a new release
-      #   id: create_release
-      #   uses: actions/create-release@v1
-      #   env:
-      #       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      #   with:
-      #     tag_name: ${{ steps.get_release.outputs.result.tag_name }}
-      #     release_name: ${{ steps.get_release.outputs.result.name }}
-      #     body: ${{ steps.get_release.outputs.result.body }}
-      #     draft: false
-      #     prerelease: false
-
-      # - name: Publish
-      #   uses: actions/upload-release-asset@v1.0.1
-      #   env:
-      #       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      #   with:
-      #     upload_url: ${{ steps.create_release.outputs.upload_url }}
-      #     asset_path: release-assets/${{ env.full }}
-      #     asset_name: ${{ env.full }}
-      #     asset_content_type: application/zip
+    - name: Create enhanced directories
+      run: |
+        mkdir -p app/src/main/java/io/github/jqssun/gpssetter/hook
+        mkdir -p app/src/main/java/io/github/jqssun/gpssetter/config
+        
+    - name: Create EnhancedLocationHook
+      run: |
+        cat > app/src/main/java/io/github/jqssun/gpssetter/hook/EnhancedLocationHook.java << 'EOF'
+        package io.github.jqssun.gpssetter.hook;
+        
+        import android.location.Location;
+        import android.location.LocationManager;
+        import de.robv.android.xposed.XC_MethodHook;
+        import de.robv.android.xposed.XposedBridge;
+        import de.robv.android.xposed.XposedHelpers;
+        import de.robv.android.xposed.callbacks.XC_LoadPackage;
+        
+        public class EnhancedLocationHook {
+            private static final String TAG = "EnhancedGPS";
+            public static double targetLatitude = 0.0;
+            public static double targetLongitude = 0.0;
+            public static boolean aggressiveMode = true;
+            
+            public static void initHook(XC_LoadPackage.LoadPackageParam lpparam) {
+                XposedBridge.log(TAG + ": Init for " + lpparam.packageName);
+                
+                try {
+                    XposedHelpers.findAndHookMethod(
+                        Location.class, "getLatitude",
+                        new XC_MethodHook() {
+                            @Override
+                            protected void afterHookedMethod(MethodHookParam param) {
+                                if (targetLatitude != 0.0) {
+                                    param.setResult(targetLatitude);
+                                }
+                            }
+                        }
+                    );
+                    
+                    XposedHelpers.findAndHookMethod(
+                        Location.class, "getLongitude",
+                        new XC_MethodHook() {
+                            @Override
+                            protected void afterHookedMethod(MethodHookParam param) {
+                                if (targetLongitude != 0.0) {
+                                    param.setResult(targetLongitude);
+                                }
+                            }
+                        }
+                    );
+                    
+                    XposedHelpers.findAndHookMethod(
+                        Location.class, "isMock",
+                        new XC_MethodHook() {
+                            @Override
+                            protected void afterHookedMethod(MethodHookParam param) {
+                                param.setResult(false);
+                            }
+                        }
+                    );
+                } catch (Throwable t) {
+                    XposedBridge.log(TAG + ": Error: " + t.getMessage());
+                }
+            }
+            
+            public static void setTargetLocation(double lat, double lon) {
+                targetLatitude = lat;
+                targetLongitude = lon;
+            }
+        }
+        EOF
+        
+    - name: Build with Gradle
+      run: ./gradlew assembleRelease --stacktrace
+      
+    - name: Upload APK artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: EnhancedGPS-APK
+        path: app/build/outputs/apk/release/*.apk
+        
+    - name: Create Release
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: v1.0-enhanced-${{ github.run_number }}
+        name: Enhanced GPS v1.0 Build ${{ github.run_number }}
+        files: app/build/outputs/apk/release/*.apk
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
