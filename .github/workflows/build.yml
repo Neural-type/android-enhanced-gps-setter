@@ -225,14 +225,14 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: EnhancedGPS-APK
-        path: app/build/outputs/apk/release/*.apk
+        path: app/build/outputs/apk/**/release/*.apk
         retention-days: 30
         
     - name: Create Release on tag
       if: startsWith(github.ref, 'refs/tags/')
       uses: softprops/action-gh-release@v2
       with:
-        files: app/build/outputs/apk/release/*.apk
+        files: app/build/outputs/apk/**/release/*.apk
         body: |
           Enhanced GPS Setter with:
           - Aggressive location hooks
